@@ -11,6 +11,8 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
+    * { box-sizing: border-box; }
+
     body {
       font-family: Arial, sans-serif;
       background: #f4f6f8;
@@ -42,7 +44,11 @@
 
     button:disabled { opacity: .5; }
 
-    #reader { width: 100%; }
+    #reader {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 10px;
+    }
 
     #barcode {
       font-size: 24px;
@@ -54,6 +60,36 @@
       white-space: pre-wrap;
       line-height: 1.5;
     }
+
+    .hidden { display: none !important; }
+
+    .zoom-panel {
+      margin-top: 15px;
+      padding: 14px;
+      border-radius: 10px;
+      background: #eef4fa;
+    }
+
+    .zoom-panel label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .zoom-panel input {
+      width: 100%;
+      accent-color: #1769aa;
+    }
+
+    .small {
+      color: #54677a;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .secondary {
+      background: #607d98;
+    }
   </style>
 </head>
 
@@ -62,7 +98,7 @@
   <h2>Kapamilya Warehouse</h2>
 
   <p style="text-align:center">
-    Live Barcode Scanner
+    Live Barcode Scanner — Version 2.0
   </p>
 
   <div class="card">
@@ -78,6 +114,39 @@
     </button>
 
     <div id="reader"></div>
+
+    <div id="zoomPanel"
+         class="zoom-panel hidden">
+
+      <label for="zoomSlider">
+        Camera Zoom:
+        <span id="zoomValue">1.0×</span>
+      </label>
+
+      <input id="zoomSlider"
+             type="range"
+             min="1"
+             max="3"
+             step="0.1"
+             value="1">
+
+      <button class="secondary"
+              onclick="resetZoom()">
+        Reset Zoom
+      </button>
+
+      <p class="small">
+        Keep the phone a little farther from the
+        barcode and adjust zoom gradually.
+      </p>
+
+    </div>
+
+    <p class="small">
+      Tip: Hold the phone approximately 15–25 cm
+      away from the barcode. Move slowly until
+      the image becomes sharp.
+    </p>
 
   </div>
 
@@ -109,11 +178,8 @@ const WAREHOUSE_URL =
   'https://script.google.com/a/macros/kapamilya.com.au/s/AKfycbzxm6U5O5n7YjGPmSMOM0ng9InXG1XzVnmXoVEl4zcVPbPmWAcXuEcC3vcijlYjMLYedw/exec';
 
 // =====================================
-// DETERMINE SCANNER MODE
+// SCANNER MODE
 // =====================================
-
-// mode=pick is used for warehouse picking.
-// All other cases default to registration.
 
 const params = new URLSearchParams(
   window.location.search
@@ -136,6 +202,10 @@ let scanning = false;
 let scanComplete = false;
 let scannedBarcode = '';
 
+let activeTrack = null;
+let zoomMin = 1;
+let zoomMax = 1;
+
 const startBtn =
   document.getElementById('start');
 
@@ -151,8 +221,17 @@ const statusEl =
 const barcodeEl =
   document.getElementById('barcode');
 
+const zoomPanel =
+  document.getElementById('zoomPanel');
+
+const zoomSlider =
+  document.getElementById('zoomSlider');
+
+const zoomValue =
+  document.getElementById('zoomValue');
+
 // =====================================
-// DISPLAY CORRECT SCREEN LABEL
+// SCREEN LABEL
 // =====================================
 
 if (scannerMode === 'pick') {
@@ -161,6 +240,119 @@ if (scannerMode === 'pick') {
 } else {
   returnBtn.textContent =
     'Return to Barcode Registration';
+}
+
+// =====================================
+// CAMERA SETTINGS
+// =====================================
+
+async function configureCamera() {
+
+  activeTrack = null;
+  zoomPanel.classList.add('hidden');
+
+  if (!scanner || !scanning) return;
+
+  try {
+
+    const capabilities =
+      scanner.getRunningTrackCapabilities();
+
+    const settings =
+      scanner.getRunningTrackSettings();
+
+    // Request continuous autofocus when available.
+    if (
+      capabilities.focusMode &&
+      capabilities.focusMode.includes('continuous')
+    ) {
+      try {
+        await scanner.applyVideoConstraints({
+          advanced: [
+            { focusMode: 'continuous' }
+          ]
+        });
+      } catch (e) {
+        // Some browsers don't allow focus changes.
+      }
+    }
+
+    // Display zoom controls only if supported.
+    if (
+      capabilities.zoom &&
+      Number.isFinite(capabilities.zoom.min) &&
+      Number.isFinite(capabilities.zoom.max) &&
+      capabilities.zoom.max >
+        capabilities.zoom.min
+    ) {
+
+      zoomMin = capabilities.zoom.min;
+      zoomMax = capabilities.zoom.max;
+
+      zoomSlider.min = zoomMin;
+      zoomSlider.max = zoomMax;
+
+      zoomSlider.step =
+        capabilities.zoom.step || 0.1;
+
+      const initialZoom =
+        Number.isFinite(settings.zoom)
+          ? settings.zoom
+          : zoomMin;
+
+      zoomSlider.value = Math.max(
+        zoomMin,
+        Math.min(zoomMax, initialZoom)
+      );
+
+      zoomValue.textContent =
+        Number(zoomSlider.value).toFixed(1) + '×';
+
+      zoomPanel.classList.remove('hidden');
+    }
+
+  } catch (error) {
+    // Continue scanning if browser does not
+    // support camera capabilities.
+  }
+}
+
+async function applyZoom(value) {
+
+  if (!scanner || !scanning) return;
+
+  const zoom = Math.max(
+    zoomMin,
+    Math.min(zoomMax, Number(value))
+  );
+
+  try {
+
+    await scanner.applyVideoConstraints({
+      advanced: [
+        { zoom: zoom }
+      ]
+    });
+
+    zoomValue.textContent =
+      zoom.toFixed(1) + '×';
+
+  } catch (error) {
+
+    statusEl.textContent =
+      'Zoom is not supported by this camera.';
+
+  }
+}
+
+zoomSlider.addEventListener(
+  'change',
+  () => applyZoom(zoomSlider.value)
+);
+
+async function resetZoom() {
+  zoomSlider.value = zoomMin;
+  await applyZoom(zoomMin);
 }
 
 // =====================================
@@ -223,11 +415,9 @@ async function startScanner() {
         if (scanComplete) return;
 
         scanComplete = true;
-
         scannedBarcode = decodedText;
 
-        barcodeEl.textContent =
-          decodedText;
+        barcodeEl.textContent = decodedText;
 
         statusEl.textContent =
           'Barcode captured successfully!';
@@ -235,7 +425,6 @@ async function startScanner() {
         await stopScanner();
 
         returnBtn.style.display = 'block';
-
         returnToWarehouse();
 
       },
@@ -249,12 +438,13 @@ async function startScanner() {
     if (!scanComplete) {
       statusEl.textContent =
         'Point camera at the carton barcode.';
+
+      await configureCamera();
     }
 
   } catch (error) {
 
     scanning = false;
-
     startBtn.disabled = false;
     stopBtn.disabled = true;
 
@@ -263,9 +453,7 @@ async function startScanner() {
       (error.message || String(error));
 
   } finally {
-
     starting = false;
-
   }
 }
 
@@ -277,6 +465,9 @@ async function stopScanner() {
 
   scanning = false;
   stopBtn.disabled = true;
+
+  zoomPanel.classList.add('hidden');
+  activeTrack = null;
 
   if (scanner) {
 
@@ -290,14 +481,13 @@ async function stopScanner() {
     try {
       active.clear();
     } catch (e) {}
-
   }
 
   startBtn.disabled = false;
 }
 
 // =====================================
-// RETURN TO CORRECT WAREHOUSE SCREEN
+// RETURN TO WAREHOUSE
 // =====================================
 
 function returnToWarehouse() {
