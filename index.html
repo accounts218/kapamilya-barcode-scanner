@@ -4,14 +4,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport"
-        content="width=device-width, initial-scale=1">
+        content="width=device-width, initial-scale=1, maximum-scale=1">
 
   <title>Kapamilya Barcode Scanner</title>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       font-family: Arial, sans-serif;
@@ -21,7 +23,9 @@
       margin: 0;
     }
 
-    h2 { text-align: center; }
+    h2 {
+      text-align: center;
+    }
 
     .card {
       background: white;
@@ -42,12 +46,19 @@
       font-weight: bold;
     }
 
-    button:disabled { opacity: .5; }
+    button:disabled {
+      opacity: .5;
+    }
 
     #reader {
       width: 100%;
       overflow: hidden;
       border-radius: 10px;
+      touch-action: none;
+    }
+
+    #reader video {
+      touch-action: none;
     }
 
     #barcode {
@@ -61,7 +72,9 @@
       line-height: 1.5;
     }
 
-    .hidden { display: none !important; }
+    .hidden {
+      display: none !important;
+    }
 
     .zoom-panel {
       margin-top: 15px;
@@ -90,6 +103,14 @@
     .secondary {
       background: #607d98;
     }
+
+    #zoomHint {
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      margin-top: 12px;
+      color: #1769aa;
+    }
   </style>
 </head>
 
@@ -98,12 +119,13 @@
   <h2>Kapamilya Warehouse</h2>
 
   <p style="text-align:center">
-    Live Barcode Scanner — Version 2.0
+    Live Barcode Scanner — Version 2.1
   </p>
 
   <div class="card">
 
-    <button id="start" onclick="startScanner()">
+    <button id="start"
+            onclick="startScanner()">
       Open Camera Scanner
     </button>
 
@@ -114,6 +136,10 @@
     </button>
 
     <div id="reader"></div>
+
+    <p id="zoomHint" class="hidden">
+      Use two fingers on the camera to zoom
+    </p>
 
     <div id="zoomPanel"
          class="zoom-panel hidden">
@@ -136,16 +162,16 @@
       </button>
 
       <p class="small">
-        Keep the phone a little farther from the
-        barcode and adjust zoom gradually.
+        Pinch the camera preview to zoom,
+        or use the slider.
       </p>
 
     </div>
 
     <p class="small">
-      Tip: Hold the phone approximately 15–25 cm
-      away from the barcode. Move slowly until
-      the image becomes sharp.
+      Tip: Keep the phone a little farther
+      away from the barcode and zoom in
+      rather than moving too close.
     </p>
 
   </div>
@@ -158,7 +184,9 @@
       No barcode scanned yet
     </div>
 
-    <p id="status">Ready to scan.</p>
+    <p id="status">
+      Ready to scan.
+    </p>
 
     <button id="returnButton"
             onclick="returnToWarehouse()"
@@ -190,7 +218,8 @@ const scannerMode =
     ? 'pick'
     : 'register';
 
-const scanState = params.get('state') || '';
+const scanState =
+  params.get('state') || '';
 
 // =====================================
 // VARIABLES
@@ -202,9 +231,16 @@ let scanning = false;
 let scanComplete = false;
 let scannedBarcode = '';
 
-let activeTrack = null;
 let zoomMin = 1;
 let zoomMax = 1;
+let currentZoom = 1;
+
+let pinchStartDistance = 0;
+let pinchStartZoom = 1;
+let pinchActive = false;
+
+let zoomApplying = false;
+let pendingZoom = null;
 
 const startBtn =
   document.getElementById('start');
@@ -230,16 +266,106 @@ const zoomSlider =
 const zoomValue =
   document.getElementById('zoomValue');
 
+const zoomHint =
+  document.getElementById('zoomHint');
+
+const reader =
+  document.getElementById('reader');
+
 // =====================================
 // SCREEN LABEL
 // =====================================
 
 if (scannerMode === 'pick') {
+
   returnBtn.textContent =
     'Return to Warehouse Picking';
+
 } else {
+
   returnBtn.textContent =
     'Return to Barcode Registration';
+
+}
+
+// =====================================
+// ZOOM HELPERS
+// =====================================
+
+function clampZoom(value) {
+
+  return Math.max(
+    zoomMin,
+    Math.min(zoomMax, Number(value))
+  );
+
+}
+
+function displayZoom(value) {
+
+  currentZoom = clampZoom(value);
+
+  zoomSlider.value = currentZoom;
+
+  zoomValue.textContent =
+    currentZoom.toFixed(1) + '×';
+
+}
+
+// =====================================
+// APPLY CAMERA ZOOM
+// =====================================
+
+async function applyZoom(value) {
+
+  if (!scanner || !scanning || scanComplete) {
+    return;
+  }
+
+  const zoom = clampZoom(value);
+
+  displayZoom(zoom);
+
+  pendingZoom = zoom;
+
+  if (zoomApplying) return;
+
+  zoomApplying = true;
+
+  try {
+
+    while (
+      pendingZoom !== null &&
+      scanner &&
+      scanning &&
+      !scanComplete
+    ) {
+
+      const nextZoom = pendingZoom;
+
+      pendingZoom = null;
+
+      await scanner.applyVideoConstraints({
+        advanced: [
+          { zoom: nextZoom }
+        ]
+      });
+
+    }
+
+  } catch (error) {
+
+    pendingZoom = null;
+
+    statusEl.textContent =
+      'Camera zoom could not be adjusted.';
+
+  } finally {
+
+    zoomApplying = false;
+
+  }
+
 }
 
 // =====================================
@@ -248,36 +374,39 @@ if (scannerMode === 'pick') {
 
 async function configureCamera() {
 
-  activeTrack = null;
   zoomPanel.classList.add('hidden');
+  zoomHint.classList.add('hidden');
 
-  if (!scanner || !scanning) return;
+  if (!scanner || !scanning || scanComplete) {
+    return;
+  }
 
   try {
 
     const capabilities =
       scanner.getRunningTrackCapabilities();
 
-    const settings =
-      scanner.getRunningTrackSettings();
+    // Enable continuous autofocus when supported.
 
-    // Request continuous autofocus when available.
     if (
       capabilities.focusMode &&
       capabilities.focusMode.includes('continuous')
     ) {
+
       try {
+
         await scanner.applyVideoConstraints({
           advanced: [
             { focusMode: 'continuous' }
           ]
         });
-      } catch (e) {
-        // Some browsers don't allow focus changes.
-      }
+
+      } catch (error) {}
+
     }
 
-    // Display zoom controls only if supported.
+    // Configure zoom.
+
     if (
       capabilities.zoom &&
       Number.isFinite(capabilities.zoom.min) &&
@@ -289,70 +418,163 @@ async function configureCamera() {
       zoomMin = capabilities.zoom.min;
       zoomMax = capabilities.zoom.max;
 
-      zoomSlider.min = zoomMin;
-      zoomSlider.max = zoomMax;
-
-      zoomSlider.step =
-        capabilities.zoom.step || 0.1;
+      const settings =
+        scanner.getRunningTrackSettings();
 
       const initialZoom =
         Number.isFinite(settings.zoom)
           ? settings.zoom
           : zoomMin;
 
-      zoomSlider.value = Math.max(
-        zoomMin,
-        Math.min(zoomMax, initialZoom)
-      );
+      zoomSlider.min = zoomMin;
+      zoomSlider.max = zoomMax;
 
-      zoomValue.textContent =
-        Number(zoomSlider.value).toFixed(1) + '×';
+      zoomSlider.step =
+        capabilities.zoom.step || 0.1;
+
+      displayZoom(initialZoom);
 
       zoomPanel.classList.remove('hidden');
+      zoomHint.classList.remove('hidden');
+
     }
 
   } catch (error) {
-    // Continue scanning if browser does not
-    // support camera capabilities.
+
+    // Scanning remains available even when
+    // camera controls are unsupported.
+
   }
+
 }
 
-async function applyZoom(value) {
+// =====================================
+// PINCH DISTANCE
+// =====================================
 
-  if (!scanner || !scanning) return;
+function getPinchDistance(touch1, touch2) {
 
-  const zoom = Math.max(
-    zoomMin,
-    Math.min(zoomMax, Number(value))
+  const dx =
+    touch1.clientX - touch2.clientX;
+
+  const dy =
+    touch1.clientY - touch2.clientY;
+
+  return Math.sqrt(
+    dx * dx + dy * dy
   );
 
-  try {
-
-    await scanner.applyVideoConstraints({
-      advanced: [
-        { zoom: zoom }
-      ]
-    });
-
-    zoomValue.textContent =
-      zoom.toFixed(1) + '×';
-
-  } catch (error) {
-
-    statusEl.textContent =
-      'Zoom is not supported by this camera.';
-
-  }
 }
 
+// =====================================
+// PINCH TO ZOOM
+// =====================================
+
+reader.addEventListener(
+  'touchstart',
+  function(event) {
+
+    if (
+      event.touches.length !== 2 ||
+      !scanning ||
+      zoomPanel.classList.contains('hidden')
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+
+    pinchActive = true;
+
+    pinchStartDistance =
+      getPinchDistance(
+        event.touches[0],
+        event.touches[1]
+      );
+
+    pinchStartZoom = currentZoom;
+
+  },
+  { passive: false }
+);
+
+reader.addEventListener(
+  'touchmove',
+  function(event) {
+
+    if (
+      !pinchActive ||
+      event.touches.length !== 2 ||
+      !scanning
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const distance =
+      getPinchDistance(
+        event.touches[0],
+        event.touches[1]
+      );
+
+    if (pinchStartDistance <= 0) {
+      return;
+    }
+
+    const scale =
+      distance / pinchStartDistance;
+
+    const desiredZoom =
+      pinchStartZoom * scale;
+
+    applyZoom(desiredZoom);
+
+  },
+  { passive: false }
+);
+
+reader.addEventListener(
+  'touchend',
+  function(event) {
+
+    if (event.touches.length < 2) {
+      pinchActive = false;
+      pinchStartDistance = 0;
+    }
+
+  },
+  { passive: false }
+);
+
+reader.addEventListener(
+  'touchcancel',
+  function() {
+
+    pinchActive = false;
+    pinchStartDistance = 0;
+
+  },
+  { passive: false }
+);
+
+// =====================================
+// ZOOM SLIDER
+// =====================================
+
 zoomSlider.addEventListener(
-  'change',
-  () => applyZoom(zoomSlider.value)
+  'input',
+  function() {
+
+    applyZoom(zoomSlider.value);
+
+  }
 );
 
 async function resetZoom() {
-  zoomSlider.value = zoomMin;
+
   await applyZoom(zoomMin);
+
 }
 
 // =====================================
@@ -364,16 +586,23 @@ async function startScanner() {
   if (starting || scanning) return;
 
   if (typeof Html5Qrcode === 'undefined') {
+
     statusEl.textContent =
       'Scanner library failed to load.';
+
     return;
+
   }
 
   starting = true;
   scanComplete = false;
   scannedBarcode = '';
 
+  pinchActive = false;
+  pendingZoom = null;
+
   startBtn.disabled = true;
+
   returnBtn.style.display = 'none';
 
   barcodeEl.textContent =
@@ -415,9 +644,11 @@ async function startScanner() {
         if (scanComplete) return;
 
         scanComplete = true;
+
         scannedBarcode = decodedText;
 
-        barcodeEl.textContent = decodedText;
+        barcodeEl.textContent =
+          decodedText;
 
         statusEl.textContent =
           'Barcode captured successfully!';
@@ -425,6 +656,7 @@ async function startScanner() {
         await stopScanner();
 
         returnBtn.style.display = 'block';
+
         returnToWarehouse();
 
       },
@@ -433,28 +665,38 @@ async function startScanner() {
     );
 
     scanning = true;
+
     stopBtn.disabled = false;
 
     if (!scanComplete) {
+
       statusEl.textContent =
         'Point camera at the carton barcode.';
 
       await configureCamera();
+
     }
 
   } catch (error) {
 
     scanning = false;
+
     startBtn.disabled = false;
     stopBtn.disabled = true;
+
+    zoomPanel.classList.add('hidden');
+    zoomHint.classList.add('hidden');
 
     statusEl.textContent =
       'Camera error: ' +
       (error.message || String(error));
 
   } finally {
+
     starting = false;
+
   }
+
 }
 
 // =====================================
@@ -464,10 +706,14 @@ async function startScanner() {
 async function stopScanner() {
 
   scanning = false;
+
   stopBtn.disabled = true;
 
+  pinchActive = false;
+  pendingZoom = null;
+
   zoomPanel.classList.add('hidden');
-  activeTrack = null;
+  zoomHint.classList.add('hidden');
 
   if (scanner) {
 
@@ -476,14 +722,16 @@ async function stopScanner() {
 
     try {
       await active.stop();
-    } catch (e) {}
+    } catch (error) {}
 
     try {
       active.clear();
-    } catch (e) {}
+    } catch (error) {}
+
   }
 
   startBtn.disabled = false;
+
 }
 
 // =====================================
@@ -505,10 +753,12 @@ function returnToWarehouse() {
     scanState &&
     /^[A-Za-z0-9_-]{10,100}$/.test(scanState)
   ) {
+
     url.searchParams.set(
       'state',
       scanState
     );
+
   }
 
   if (scannerMode === 'pick') {
@@ -531,6 +781,7 @@ function returnToWarehouse() {
   window.location.assign(
     url.toString()
   );
+
 }
 
 </script>
