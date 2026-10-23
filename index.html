@@ -5,182 +5,102 @@
   <meta charset="UTF-8">
   <meta name="viewport"
         content="width=device-width, initial-scale=1">
-
   <title>Kapamilya Barcode Scanner</title>
-
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
   <style>
     body {
       font-family: Arial, sans-serif;
       background: #f4f6f8;
       color: #173b64;
-      margin: 0;
       padding: 20px;
+      margin: 0;
     }
-
-    h2 {
-      text-align: center;
-      margin-bottom: 8px;
-    }
-
-    .subtitle {
-      text-align: center;
-      margin-bottom: 25px;
-    }
-
+    h2 { text-align: center; }
     .card {
       background: white;
-      border-radius: 14px;
       padding: 18px;
-      margin-bottom: 18px;
+      border-radius: 12px;
+      margin: 15px 0;
     }
-
     button {
       width: 100%;
-      padding: 16px;
+      padding: 15px;
       margin: 8px 0;
       border: none;
-      border-radius: 9px;
+      border-radius: 8px;
       background: #1769aa;
       color: white;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: bold;
-      cursor: pointer;
     }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    #reader {
-      width: 100%;
-      margin-top: 12px;
-    }
-
+    button:disabled { opacity: .5; }
+    #reader { width: 100%; }
     #barcode {
-      font-size: 25px;
+      font-size: 24px;
       font-weight: bold;
       overflow-wrap: anywhere;
-      margin: 12px 0;
     }
-
-    #status {
-      white-space: pre-wrap;
-      line-height: 1.5;
-    }
-
-    .success {
-      color: #16753c;
-    }
-
-    .secondary {
-      background: #607d98;
-    }
+    #status { white-space: pre-wrap; }
   </style>
 </head>
-
 <body>
-
   <h2>Kapamilya Warehouse</h2>
-  <p class="subtitle">Live Barcode Scanner</p>
+  <p style="text-align:center">Live Barcode Scanner</p>
 
   <div class="card">
-
     <button id="start" onclick="startScanner()">
       Open Camera Scanner
     </button>
-
-    <button id="stop"
-            class="secondary"
-            onclick="stopScanner()"
-            disabled>
+    <button id="stop" onclick="stopScanner()" disabled>
       Stop Camera
     </button>
-
     <div id="reader"></div>
-
   </div>
 
   <div class="card">
-
     <p>Scanned Barcode:</p>
-
-    <div id="barcode">
-      No barcode scanned yet
-    </div>
-
+    <div id="barcode">No barcode scanned yet</div>
     <p id="status">Ready to scan.</p>
-
     <button id="returnButton"
-            style="display:none"
-            onclick="returnToRegistration()">
+            onclick="returnToRegistration()"
+            style="display:none">
       Return to Registration
     </button>
-
   </div>
 
 <script>
+const REGISTRATION_URL =
+  'https://script.google.com/a/macros/kapamilya.com.au/s/AKfycbzxm6U5O5n7YjGPmSMOM0ng9InXG1XzVnmXoVEl4zcVPbPmWAcXuEcC3vcijlYjMLYedw/exec';
 
 let scanner = null;
-let scanning = false;
 let starting = false;
+let scanning = false;
 let scanComplete = false;
 let scannedBarcode = '';
 
-const statusEl = document.getElementById('status');
-const barcodeEl = document.getElementById('barcode');
 const startBtn = document.getElementById('start');
 const stopBtn = document.getElementById('stop');
 const returnBtn = document.getElementById('returnButton');
-
-const params = new URLSearchParams(window.location.search);
-const returnAddress = params.get('return');
-
-function getReturnUrl() {
-  if (!returnAddress) return null;
-
-  try {
-    const url = new URL(returnAddress);
-
-    if (
-      url.protocol !== 'https:' ||
-      url.hostname !== 'script.google.com' ||
-      !/^\/macros\/s\/[^/]+\/exec$/.test(url.pathname)
-    ) {
-      return null;
-    }
-
-    return url;
-
-  } catch (error) {
-    return null;
-  }
-}
+const statusEl = document.getElementById('status');
+const barcodeEl = document.getElementById('barcode');
 
 async function startScanner() {
-
-  if (scanning || starting) return;
+  if (starting || scanning) return;
 
   if (typeof Html5Qrcode === 'undefined') {
-    statusEl.textContent =
-      'Scanner library failed to load.';
+    statusEl.textContent = 'Scanner library failed to load.';
     return;
   }
 
   starting = true;
   scanComplete = false;
   scannedBarcode = '';
-
-  barcodeEl.textContent = 'No barcode scanned yet';
-  returnBtn.style.display = 'none';
   startBtn.disabled = true;
-
+  returnBtn.style.display = 'none';
+  barcodeEl.textContent = 'No barcode scanned yet';
   statusEl.textContent = 'Opening camera...';
 
   try {
-
     scanner = new Html5Qrcode('reader', {
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
@@ -198,33 +118,20 @@ async function startScanner() {
       { facingMode: 'environment' },
       {
         fps: 10,
-        qrbox: {
-          width: 250,
-          height: 150
-        }
+        qrbox: { width: 250, height: 150 }
       },
       async decodedText => {
-
         if (scanComplete) return;
 
         scanComplete = true;
         scannedBarcode = decodedText;
-
         barcodeEl.textContent = decodedText;
-        barcodeEl.classList.add('success');
-
-        statusEl.textContent =
-          'Barcode captured successfully!';
+        statusEl.textContent = 'Barcode captured successfully!';
 
         await stopScanner();
 
-        if (getReturnUrl()) {
-          returnToRegistration();
-        } else if (returnAddress) {
-          statusEl.textContent =
-            'Barcode captured. Registration return link is invalid.';
-        }
-
+        returnBtn.style.display = 'block';
+        returnToRegistration();
       },
       () => {}
     );
@@ -238,69 +145,52 @@ async function startScanner() {
     }
 
   } catch (error) {
-
     scanning = false;
     startBtn.disabled = false;
     stopBtn.disabled = true;
-
     statusEl.textContent =
-      'Camera error: ' +
-      (error.message || String(error));
-
+      'Camera error: ' + (error.message || String(error));
   } finally {
     starting = false;
   }
 }
 
 async function stopScanner() {
-
   scanning = false;
   stopBtn.disabled = true;
 
   if (scanner) {
-
-    const activeScanner = scanner;
+    const active = scanner;
     scanner = null;
 
     try {
-      await activeScanner.stop();
-    } catch (error) {
-      console.log(error);
-    }
+      await active.stop();
+    } catch (e) {}
 
     try {
-      activeScanner.clear();
-    } catch (error) {
-      console.log(error);
-    }
+      active.clear();
+    } catch (e) {}
   }
 
   startBtn.disabled = false;
 }
 
 function returnToRegistration() {
-
   if (!scannedBarcode) return;
 
-  const url = getReturnUrl();
-
-  if (!url) {
-    statusEl.textContent =
-      'No valid registration return link was provided.';
-    return;
-  }
-
+  const url = new URL(REGISTRATION_URL);
   url.searchParams.set('barcode', scannedBarcode);
 
-  statusEl.textContent =
-    'Returning to barcode registration...';
+  const state = new URLSearchParams(location.search)
+    .get('state');
 
-  returnBtn.style.display = 'block';
+  if (state && /^[A-Za-z0-9_-]{10,100}$/.test(state)) {
+    url.searchParams.set('state', state);
+  }
 
+  statusEl.textContent = 'Returning to registration...';
   window.location.assign(url.toString());
 }
-
 </script>
-
 </body>
 </html>
