@@ -1,0 +1,156 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+  <title>Kapamilya Barcode Scanner</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+      color: #173b64;
+    }
+    h2 { text-align: center; }
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 18px;
+      margin: 18px 0;
+    }
+    button {
+      width: 100%;
+      padding: 16px;
+      margin: 8px 0;
+      border: none;
+      border-radius: 9px;
+      background: #1769aa;
+      color: white;
+      font-size: 17px;
+      font-weight: bold;
+    }
+    button:disabled { opacity: 0.5; }
+    #reader { width: 100%; }
+    #barcode {
+      font-size: 25px;
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+    #status { white-space: pre-wrap; }
+  </style>
+</head>
+
+<body>
+  <h2>Kapamilya Warehouse</h2>
+  <p style="text-align:center">Live Barcode Scanner</p>
+
+  <div class="card">
+    <button id="start" onclick="startScanner()">
+      Open Camera Scanner
+    </button>
+    <button id="stop" onclick="stopScanner()"
+            disabled>
+      Stop Camera
+    </button>
+    <div id="reader"></div>
+  </div>
+
+  <div class="card">
+    <p>Scanned Barcode:</p>
+    <div id="barcode">No barcode scanned yet</div>
+    <p id="status">Ready to scan.</p>
+  </div>
+
+  <script>
+    let scanner = null;
+    let scanning = false;
+
+    const statusEl = document.getElementById('status');
+    const barcodeEl = document.getElementById('barcode');
+    const startBtn = document.getElementById('start');
+    const stopBtn = document.getElementById('stop');
+
+    async function startScanner() {
+      if (scanning) return;
+
+      if (typeof Html5Qrcode === 'undefined') {
+        statusEl.textContent =
+          'Scanner library failed to load.';
+        return;
+      }
+
+      startBtn.disabled = true;
+      statusEl.textContent = 'Opening camera...';
+
+      try {
+        scanner = new Html5Qrcode('reader', {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.ITF
+          ],
+          verbose: false
+        });
+
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 150 }
+          },
+          async decodedText => {
+            if (!scanning) return;
+
+            barcodeEl.textContent = decodedText;
+            statusEl.textContent =
+              'Barcode captured successfully!';
+
+            await stopScanner();
+          },
+          () => {}
+        );
+
+        scanning = true;
+        stopBtn.disabled = false;
+        statusEl.textContent =
+          'Point camera at the carton barcode.';
+
+      } catch (error) {
+        scanning = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statusEl.textContent =
+          'Camera error: ' +
+          (error.message || String(error));
+      }
+    }
+
+    async function stopScanner() {
+      scanning = false;
+      stopBtn.disabled = true;
+
+      if (scanner) {
+        try {
+          await scanner.stop();
+          scanner.clear();
+        } catch (error) {
+          console.log(error);
+        }
+        scanner = null;
+      }
+
+      startBtn.disabled = false;
+    }
+  </script>
+</body>
+</html>
