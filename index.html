@@ -5,8 +5,11 @@
   <meta charset="UTF-8">
   <meta name="viewport"
         content="width=device-width, initial-scale=1">
+
   <title>Kapamilya Barcode Scanner</title>
+
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -15,13 +18,16 @@
       padding: 20px;
       margin: 0;
     }
+
     h2 { text-align: center; }
+
     .card {
       background: white;
       padding: 18px;
       border-radius: 12px;
       margin: 15px 0;
     }
+
     button {
       width: 100%;
       padding: 15px;
@@ -33,44 +39,96 @@
       font-size: 16px;
       font-weight: bold;
     }
+
     button:disabled { opacity: .5; }
+
     #reader { width: 100%; }
+
     #barcode {
       font-size: 24px;
       font-weight: bold;
       overflow-wrap: anywhere;
     }
-    #status { white-space: pre-wrap; }
+
+    #status {
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
   </style>
 </head>
+
 <body>
+
   <h2>Kapamilya Warehouse</h2>
-  <p style="text-align:center">Live Barcode Scanner</p>
+
+  <p style="text-align:center">
+    Live Barcode Scanner
+  </p>
 
   <div class="card">
+
     <button id="start" onclick="startScanner()">
       Open Camera Scanner
     </button>
-    <button id="stop" onclick="stopScanner()" disabled>
+
+    <button id="stop"
+            onclick="stopScanner()"
+            disabled>
       Stop Camera
     </button>
+
     <div id="reader"></div>
+
   </div>
 
   <div class="card">
+
     <p>Scanned Barcode:</p>
-    <div id="barcode">No barcode scanned yet</div>
+
+    <div id="barcode">
+      No barcode scanned yet
+    </div>
+
     <p id="status">Ready to scan.</p>
+
     <button id="returnButton"
-            onclick="returnToRegistration()"
+            onclick="returnToWarehouse()"
             style="display:none">
-      Return to Registration
+      Return to Warehouse
     </button>
+
   </div>
 
 <script>
-const REGISTRATION_URL =
+
+// =====================================
+// GOOGLE APPS SCRIPT WEB APP
+// =====================================
+
+const WAREHOUSE_URL =
   'https://script.google.com/a/macros/kapamilya.com.au/s/AKfycbzxm6U5O5n7YjGPmSMOM0ng9InXG1XzVnmXoVEl4zcVPbPmWAcXuEcC3vcijlYjMLYedw/exec';
+
+// =====================================
+// DETERMINE SCANNER MODE
+// =====================================
+
+// mode=pick is used for warehouse picking.
+// All other cases default to registration.
+
+const params = new URLSearchParams(
+  window.location.search
+);
+
+const scannerMode =
+  params.get('mode') === 'pick'
+    ? 'pick'
+    : 'register';
+
+const scanState = params.get('state') || '';
+
+// =====================================
+// VARIABLES
+// =====================================
 
 let scanner = null;
 let starting = false;
@@ -78,61 +136,110 @@ let scanning = false;
 let scanComplete = false;
 let scannedBarcode = '';
 
-const startBtn = document.getElementById('start');
-const stopBtn = document.getElementById('stop');
-const returnBtn = document.getElementById('returnButton');
-const statusEl = document.getElementById('status');
-const barcodeEl = document.getElementById('barcode');
+const startBtn =
+  document.getElementById('start');
+
+const stopBtn =
+  document.getElementById('stop');
+
+const returnBtn =
+  document.getElementById('returnButton');
+
+const statusEl =
+  document.getElementById('status');
+
+const barcodeEl =
+  document.getElementById('barcode');
+
+// =====================================
+// DISPLAY CORRECT SCREEN LABEL
+// =====================================
+
+if (scannerMode === 'pick') {
+  returnBtn.textContent =
+    'Return to Warehouse Picking';
+} else {
+  returnBtn.textContent =
+    'Return to Barcode Registration';
+}
+
+// =====================================
+// START CAMERA
+// =====================================
 
 async function startScanner() {
+
   if (starting || scanning) return;
 
   if (typeof Html5Qrcode === 'undefined') {
-    statusEl.textContent = 'Scanner library failed to load.';
+    statusEl.textContent =
+      'Scanner library failed to load.';
     return;
   }
 
   starting = true;
   scanComplete = false;
   scannedBarcode = '';
+
   startBtn.disabled = true;
   returnBtn.style.display = 'none';
-  barcodeEl.textContent = 'No barcode scanned yet';
-  statusEl.textContent = 'Opening camera...';
+
+  barcodeEl.textContent =
+    'No barcode scanned yet';
+
+  statusEl.textContent =
+    'Opening camera...';
 
   try {
-    scanner = new Html5Qrcode('reader', {
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.ITF
-      ],
-      verbose: false
-    });
+
+    scanner = new Html5Qrcode(
+      'reader',
+      {
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.ITF
+        ],
+        verbose: false
+      }
+    );
 
     await scanner.start(
       { facingMode: 'environment' },
       {
         fps: 10,
-        qrbox: { width: 250, height: 150 }
+        qrbox: {
+          width: 250,
+          height: 150
+        }
       },
+
       async decodedText => {
+
         if (scanComplete) return;
 
         scanComplete = true;
+
         scannedBarcode = decodedText;
-        barcodeEl.textContent = decodedText;
-        statusEl.textContent = 'Barcode captured successfully!';
+
+        barcodeEl.textContent =
+          decodedText;
+
+        statusEl.textContent =
+          'Barcode captured successfully!';
 
         await stopScanner();
 
         returnBtn.style.display = 'block';
-        returnToRegistration();
+
+        returnToWarehouse();
+
       },
+
       () => {}
     );
 
@@ -145,21 +252,34 @@ async function startScanner() {
     }
 
   } catch (error) {
+
     scanning = false;
+
     startBtn.disabled = false;
     stopBtn.disabled = true;
+
     statusEl.textContent =
-      'Camera error: ' + (error.message || String(error));
+      'Camera error: ' +
+      (error.message || String(error));
+
   } finally {
+
     starting = false;
+
   }
 }
 
+// =====================================
+// STOP CAMERA
+// =====================================
+
 async function stopScanner() {
+
   scanning = false;
   stopBtn.disabled = true;
 
   if (scanner) {
+
     const active = scanner;
     scanner = null;
 
@@ -170,27 +290,60 @@ async function stopScanner() {
     try {
       active.clear();
     } catch (e) {}
+
   }
 
   startBtn.disabled = false;
 }
 
-function returnToRegistration() {
+// =====================================
+// RETURN TO CORRECT WAREHOUSE SCREEN
+// =====================================
+
+function returnToWarehouse() {
+
   if (!scannedBarcode) return;
 
-  const url = new URL(REGISTRATION_URL);
-  url.searchParams.set('barcode', scannedBarcode);
+  const url = new URL(WAREHOUSE_URL);
 
-  const state = new URLSearchParams(location.search)
-    .get('state');
+  url.searchParams.set(
+    'barcode',
+    scannedBarcode
+  );
 
-  if (state && /^[A-Za-z0-9_-]{10,100}$/.test(state)) {
-    url.searchParams.set('state', state);
+  if (
+    scanState &&
+    /^[A-Za-z0-9_-]{10,100}$/.test(scanState)
+  ) {
+    url.searchParams.set(
+      'state',
+      scanState
+    );
   }
 
-  statusEl.textContent = 'Returning to registration...';
-  window.location.assign(url.toString());
+  if (scannerMode === 'pick') {
+
+    url.searchParams.set(
+      'page',
+      'picking'
+    );
+
+    statusEl.textContent =
+      'Returning to warehouse picking...';
+
+  } else {
+
+    statusEl.textContent =
+      'Returning to barcode registration...';
+
+  }
+
+  window.location.assign(
+    url.toString()
+  );
 }
+
 </script>
+
 </body>
 </html>
